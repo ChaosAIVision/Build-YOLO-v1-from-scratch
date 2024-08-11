@@ -38,10 +38,8 @@ def create_fake_data(batch_size, S, B, C):
     return predictions, target
 
 def test_yolo_loss():
-    # Khởi tạo mô hình YOLO loss
     yolo_loss = YoloLoss()
 
-    # Tạo các dự đoán giả và mục tiêu giả cho các bài kiểm tra
     batch_size = 2
     S = 7
     B = 2

@@ -1,0 +1,7 @@
+train: /home/chaos/Documents/ChaosAIVision/dataset/fire_dataset/train/images
+valid: /home/chaos/Documents/ChaosAIVision/dataset/fire_dataset/valid/images
+test: 
+num_classes: 2
+categories: ['cats', 'dogs']
+pretrain_weight: /home/chaos/Documents/ChaosAIVision/vgg16-397923af.pth
+save_dirs: /home/chaos/Documents/ChaosAIVision/temp_folder

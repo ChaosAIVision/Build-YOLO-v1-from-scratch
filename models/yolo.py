@@ -34,7 +34,7 @@ class YOLOv1(nn.Module):
         self.fcs = self.make_fcs(**kwargs)
 
     def forward(self, x):
-        x = self.darknet(x)
+        x = self.darknet(x)             
         x = torch.flatten(x, start_dim= 1)
         x = self.fcs(x)
 

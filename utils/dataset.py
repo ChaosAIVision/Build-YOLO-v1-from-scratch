@@ -4,7 +4,7 @@ import pandas as pd
 from PIL import Image
 from torch.utils.data import Dataset
 from utils.general import ManagerDataYaml, is_image_file
-from utils.augmentations import transform_labels_to_one_hot
+from utils.augmentations import YOLOAugmentation
 
 import os
 import pickle
@@ -91,7 +91,7 @@ class YOLODataset(Dataset):
     def __init__(self, is_train, data_yaml, S= 7, B= 2, C = 20, transform= None):
         data_yaml_manage = ManagerDataYaml(data_yaml)
         data_yaml_manage.load_yaml()
-
+        self.is_train = is_train
         self.transform = transform
         self.S = S 
         self.B = B 
@@ -117,6 +117,10 @@ class YOLODataset(Dataset):
         infor = self.cache[index]
         image = Image.open(infor['images'])
         labels = infor['labels']
+        if self.transform:
+            augmentator=  YOLOAugmentation(self.is_train)
+            image, labels = augmentator(image, labels)
+            print('it is transform sucessfully !')
         boxes = torch.tensor(labels)
 
          # Convert To Cells

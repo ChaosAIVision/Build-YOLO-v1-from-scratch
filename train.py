@@ -7,15 +7,13 @@ import argparse
 import numpy as np
 import shutil
 import matplotlib.pyplot as plt
-# from utils.general import plot_confusion_matrix
 from models.yolo import YOLOv1
 from utils.general import ManagerDataYaml, ManageSaveDir, save_plots_from_tensorboard, cellboxes_to_boxes
 from utils.dataloader import CustomDataLoader
 from utils.loss import YoloLoss
 from utils.dataset import Create_YOLO_Cache
-from utils.metric import  non_max_suppression, mean_average_precision,intersection_over_union
+from utils.metric import  non_max_suppression, mean_average_precision
 import warnings
-from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
 warnings.filterwarnings('ignore')
 
@@ -28,6 +26,9 @@ def get_args():
     parser.add_argument('--learning_rate', '-l', type= float, default= 1e-2)
     parser.add_argument('--resume', action='store_true', help='True if want to resume training')
     parser.add_argument('--pretrain', action='store_true', help='True if want to use pre-trained weights')
+    parser.add_argument("--iou_threshold", '-iou', type = int, default= 0.5)
+    parser.add_argument("--conf_threshold", '-conf', type = int, default= 0.25)
+
     return parser.parse_args()  # Cần trả về kết quả từ parser.parse_args()
 
 
@@ -117,8 +118,8 @@ def train(args):
     # VALIDATION
 
         model.eval()
-        iou_threshold = None
-        conf = 0
+        iou_threshold = args.iou_theshold
+        conf = args.conf_theshold
         pred_format ='cells'
         box_format = 'midpoint'
         all_losses = []

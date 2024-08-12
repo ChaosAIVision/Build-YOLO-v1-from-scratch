@@ -9,7 +9,7 @@ import shutil
 import matplotlib.pyplot as plt
 # from utils.general import plot_confusion_matrix
 from models.yolo import YOLOv1
-from utils.general import ManagerDataYaml, ManageSaveDir, save_plots_from_tensorboard, cellboxes_to_boxes, get_bboxes
+from utils.general import ManagerDataYaml, ManageSaveDir, save_plots_from_tensorboard, cellboxes_to_boxes
 from utils.dataloader import CustomDataLoader
 from utils.loss import YoloLoss
 from utils.dataset import Create_YOLO_Cache
@@ -90,10 +90,7 @@ def train(args):
     for epoch in range(start_epochs, args.epochs):
         model.train()
         all_train_losses = []
-        all_train_labels = []
-
-        all_train_predictions = []
-        progress_bar = tqdm(train_dataloader, colour=  'green', desc=f"epochs: {epoch}/{args.epochs}")
+        progress_bar = tqdm(train_dataloader, colour=  'green', desc=f"epochs: {epoch + 1}/{args.epochs}")
         for i, (images, labels) in enumerate(progress_bar):
             images = images.to(device)
             labels = labels.to(device)
@@ -104,27 +101,15 @@ def train(args):
             with torch.cuda.amp.autocast():
                 output =  model(images)
                 loss = loss_fn(output, labels)
-                map50 = 0# find my map
-
-                
-
-                
+                all_train_losses.append(loss.item())
+                 
             all_train_losses.append(loss.item())
-            all_train_labels.extend(interger_labels.tolist())
-            all_train_predictions.extend(prediction_train.tolist())
-            progress_bar.set_description(f"Epochs {epoch + 1}/{args.epochs} loss: {loss :0.4f}")
-            # writer.add_scalar('Train/loss', loss, epoch * len(train_dataloader) + i)
+            progress_bar.set_postfix({f'loss: {loss :0.4f} '})
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
         avagare__train_loss = np.mean(all_train_losses)
-        accuracy_train  = calculate_accuracy(all_train_labels, all_train_predictions, is_all= True)
-        cm_train = confusion_matrix(all_train_labels, all_train_predictions)
-        precision_recall_train = calculate_precision_recall(cm_train, categories, 'all')
         writer.add_scalar("Train/mean_loss", avagare__train_loss, epoch)
-        writer.add_scalar("Train/accuracy", accuracy_train, epoch)
-        writer.add_scalar("Train/precision", precision_recall_train['average_precision'], epoch)
-        writer.add_scalar("Train/recall", precision_recall_train['average_recall'], epoch)
 
 
 
@@ -132,11 +117,17 @@ def train(args):
     # VALIDATION
 
         model.eval()
+        iou_threshold = None
+        conf = 0
+        pred_format ='cells'
+        box_format = 'midpoint'
         all_losses = []
-        all_labels = []
-        all_predictions = []
+        all_pred_boxes = []
+        all_true_boxes = []
+  
+
         with torch.no_grad():
-            progress_bar = tqdm(valid_loader, colour=  'yellow')
+            progress_bar = tqdm(valid_loader, colour=  'yellow', desc=f"epochs: {epoch}/{args.epochs}")
             for i, (images, labels) in enumerate(progress_bar):
                 images = images.to(device)
                 labels = labels.to(device)
@@ -145,31 +136,29 @@ def train(args):
                     continue
                 output = model(images)
                 with torch.cuda.amp.autocast():
-                    prediction = torch.argmax(output, dim= 1)
-                    interger_labels = torch.argmax(labels, dim= 1)
-                    if epoch < args.stop_mse_loss: # Use loss MSE when start trainning help model optimizer bettter 
-                        output = output.float()
-                        labels = labels.float()
-                        loss = mse_loss (output, labels)
-                    else:
-                        loss = CrossEntropyLoss(output, labels)
-                progress_bar.set_description(f"Epochs {epoch + 1}/{args.epochs} loss: {loss :0.4f}")
+                    loss = loss_fn(output, labels)
                 all_losses.append(loss.item())
-                all_labels.extend(interger_labels.tolist())
-                all_predictions.extend(prediction.tolist())
-                # writer.add_scalar('Valid/loss', loss, epoch * len(valid_loader) + i)
-
-
+                progress_bar.set_postfix({f'loss: {loss :0.4f} '})
+                batch_size = output.shape[0]
+                true_bboxes =cellboxes_to_boxes(labels)
+                pred_bboxes = cellboxes_to_boxes(output)
+                for idx in range(batch_size):
+                    nms_boxes = non_max_suppression(pred_bboxes(idx),
+                                                    iou_threshold,
+                                                    conf, 
+                                                    box_format)
+                    for nms_box in nms_boxes:
+                        all_pred_boxes.append(nms_box)
+                    for box in true_bboxes:
+                        if box[1] > conf:
+                            all_true_boxes.append(box)
+            mAP50, precision, recall = mean_average_precision(all_pred_boxes, all_true_boxes,iou_threshold, box_format, num_classes, True)
             avagare_loss = np.mean(all_losses)
-            accuracy  = calculate_accuracy(all_labels, all_predictions, is_all= True)
-            cm = confusion_matrix(all_labels, all_predictions)
-            precision_recall = calculate_precision_recall(cm, categories, 'all')
-            print(f"precision: {precision_recall['average_precision' ] :0.4f}  recall: {precision_recall['average_recall']:0.4f} loss: {avagare_loss :0.4f} accuracy: {accuracy :0.4f}")
-            writer.add_scalar("Valid/accuracy", accuracy, epoch)
+            print(f"precision: {precision :0.4f}  recall: {recall:0.4f} loss: {avagare_loss :0.4f} mAP50: {mAP50 :0.4f}")
+            writer.add_scalar("Valid/mAP50", mAP50, epoch)
             writer.add_scalar("Valid/mean_loss", avagare_loss, epoch)
-            writer.add_scalar("Valid/precision", precision_recall['average_precision'], epoch)
-            writer.add_scalar("Valid/recall", precision_recall['average_recall'], epoch)
-            plot_confusion_matrix(writer, cm, categories, epoch)
+            writer.add_scalar("Valid/precision", precision, epoch)
+            writer.add_scalar("Valid/recall", recall,  epoch)
             checkpoint = {
                 'model_state_dict': model.state_dict(),
                 'epochs' : epoch,
@@ -177,9 +166,9 @@ def train(args):
                 'best_mapuracy': best_map
             }
             torch.save(checkpoint,os.path.join( weights_folder, 'last.pt'))
-            if accuracy > best_map:
+            if mAP50 > best_map:
                 torch.save(checkpoint,os.path.join( weights_folder, 'best.pt'))
-                best_map = accuracy
+                best_map = mAP50
 
     save_plots_from_tensorboard(tensorboard_folder, save_dir)    
 

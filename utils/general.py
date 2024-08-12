@@ -333,3 +333,73 @@ def load_cache(cache_file_path):
         cache = pickle.load(f)
     
     return cache
+
+
+def save_plots_from_tensorboard(tensorboard_folder, output_image_folder):
+    # Khởi tạo EventAccumulator để đọc các tệp sự kiện trong thư mục
+    event_accumulator = EventAccumulator(tensorboard_folder)
+    event_accumulator.Reload()
+
+    # Lấy tất cả các tags từ TensorBoard
+    scalar_tags = event_accumulator.Tags()['scalars']
+    
+    # Lấy dữ liệu cho các scalar tags
+    def get_scalar_data(tag):
+        events = event_accumulator.Scalars(tag)
+        steps = [event.step for event in events]
+        values = [event.value for event in events]
+        return steps, values
+
+    # Tạo tấm ảnh đầu tiên với 8 biểu đồ
+    plt.figure(figsize=(16, 8))
+    
+    # Các tag cho huấn luyện
+    train_tags = ['Train/mean_loss', 'Train/accuracy', 'Train/precision', 'Train/recall']
+    # Các tag cho kiểm tra
+    valid_tags = ['Valid/mean_loss', 'Valid/accuracy', 'Valid/precision', 'Valid/recall']
+
+    # Vẽ các biểu đồ cho tập huấn luyện
+    for i, tag in enumerate(train_tags):
+        plt.subplot(2, 4, i + 1)
+        steps, values = get_scalar_data(tag)
+        plt.plot(steps, values)
+        plt.title(tag)
+        plt.xlabel('Steps')
+        plt.ylabel('Value')
+
+    # Vẽ các biểu đồ cho tập kiểm tra
+    for i, tag in enumerate(valid_tags):
+        plt.subplot(2, 4, i + 5)
+        steps, values = get_scalar_data(tag)
+        plt.plot(steps, values)
+        plt.title(tag)
+        plt.xlabel('Steps')
+        plt.ylabel('Value')
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_image_folder, 'training_and_validation_plots.png'))
+    plt.close()
+
+    # Lấy dữ liệu ma trận nhầm lẫn
+    confusion_matrix_tag = 'confusion_matrix'
+    image_events = event_accumulator.Images(confusion_matrix_tag)
+
+    if image_events:
+        # Lấy bước cuối cùng từ các sự kiện hình ảnh
+        last_step = max(event.step for event in image_events)
+        
+        # Lọc sự kiện hình ảnh với bước cuối cùng
+        for event in reversed(image_events):
+            if event.step == last_step:
+                image_string = event.encoded_image_string
+                image = Image.open(io.BytesIO(image_string))
+                
+                plt.figure(figsize=(8, 8))
+                plt.imshow(image)
+                plt.title('Confusion Matrix')
+                plt.axis('off')
+                plt.savefig(os.path.join(output_image_folder, 'confusion_matrix.png'))
+                plt.close()
+                break
+    else:
+        print("No confusion matrix found in TensorBoard logs.")

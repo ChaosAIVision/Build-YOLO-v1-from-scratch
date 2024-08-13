@@ -109,6 +109,7 @@ def train(args):
             progress_bar.set_postfix({'loss': f'{loss.item():0.4f}'})
 
             scaler.scale(loss).backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Thay đổi max_norm tùy thuộc vào nhu cầu của bạn
             scaler.step(optimizer)
             scaler.update()
         avagare__train_loss = np.mean(all_train_losses)

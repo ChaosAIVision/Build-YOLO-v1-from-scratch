@@ -1,5 +1,5 @@
-train: /home/chaos/Documents/ChaosAIVision/dataset/temp_dataset/train/images
-valid: /home/chaos/Documents/ChaosAIVision/dataset/temp_dataset/valid/images
+train: /home/chaos/Documents/ChaosAIVision/dataset/voc_dataset/train/images
+valid: /home/chaos/Documents/ChaosAIVision/dataset/voc_dataset/valid/images
 test: 
 num_classes: 20
 categories: ["aeroplane",

@@ -81,7 +81,7 @@ def train(args):
     if cache_valid_creator.__save_cache__() :
         print('sucessfully create train iamges cache !')
 
-    model = torch.compile(model)
+    # model = torch.compile(model)
     model.to(device)
     train_dataloader = CustomDataLoader(args.data_yaml,'train', args.batch_size, num_workers= 4).create_dataloader()
     valid_loader = CustomDataLoader(args.data_yaml,'valid', args.batch_size, num_workers= 2).create_dataloader()

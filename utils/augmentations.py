@@ -8,23 +8,24 @@ class YOLOAugmentation:
         self.image_size = image_size
         self.geometric_transform = self.get_geometric_transform()
         self.color_transform = self.get_color_transform()
+        self.get_valid_transform = self.get_valid_transform()
         self.is_train = is_train
 
     def get_geometric_transform(self):
         return A.Compose([
-            A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=45, p=0.5),
+            A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=45, p=0),
             A.HorizontalFlip(p=0.1),
             A.VerticalFlip(p=0.1),
             A.Resize(height=self.image_size[0], width=self.image_size[1]),
         ], bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels']))
     
     def get_valid_transform(self):
-        return A.Compose([A.Resize(self.image_size[0], self.image_size[1])])
+        return A.Compose([A.Resize(448, 448)],  bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels']))
 
     def get_color_transform(self):
         return A.Compose([
             A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.2),
-            A.HueSaturationValue(hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=0.0),
+            A.HueSaturationValue(hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=0.1),
         ])
 
     def pil_to_numpy(self, image):

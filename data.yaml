@@ -1,7 +1,30 @@
-train: /Users/chaos/Documents/Chaos_working/Chaos_datasets/vehicle_dataset/train/images
-valid: /Users/chaos/Documents/Chaos_working/Chaos_datasets/vehicle_dataset/train/images
+train: /home/chaos/Documents/ChaosAIVision/dataset/temp_dataset/train/images
+valid: /home/chaos/Documents/ChaosAIVision/dataset/temp_dataset/valid/images
 test: 
-num_classes: 4
-categories: ['bus', 'car', 'motorbike', 'truck']
-pretrain_weight: /home/chaos/Documents/ChaosAIVision/vgg16-397923af.pth
-save_dirs: /home/chaos/Documents/ChaosAIVision/temp_folder
+num_classes: 20
+categories: ["aeroplane",
+"bicycle",
+"bird",
+"boat",
+"bottle",
+"bus",
+"car",
+"cat",
+"chair",
+"cow",
+"diningtable",
+"dog",
+"horse",
+"motorbike",
+"person",
+"pottedplant",
+"sheep",
+"sofa",
+"train",
+"tvmonitor"]
+pretrain_weight: /home/chaos/Documents/ChaosAIVision/yolo_output/yolov1.weights
+save_dirs: /home/chaos/Documents/ChaosAIVision/yolo_output/
+
+
+
+

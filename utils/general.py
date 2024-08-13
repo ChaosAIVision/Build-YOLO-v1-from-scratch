@@ -403,3 +403,45 @@ def save_plots_from_tensorboard(tensorboard_folder, output_image_folder):
                 break
     else:
         print("No confusion matrix found in TensorBoard logs.")
+
+
+def convert_xywh2xyxy(pred_boxes, image_size):
+    """
+    Converts bounding boxes from xywh to xyxy format and formats them as tensors.
+
+    Parameters:
+        pred_boxes (list): List of bounding boxes in the format [class_id, conf, x_center, y_center, width, height].
+        image_size (int): The size of the image (assumed to be square).
+
+    Returns:
+        tuple: (tensor of bounding boxes, tensor of class labels, tensor of scores)
+    """
+    boxes = []
+    class_ids = []
+    scores = []
+
+    for box in pred_boxes:
+        class_id = int(box[0])
+        conf = box[1]
+        x_center = box[2] * image_size
+        y_center = box[3] * image_size
+        width = box[4] * image_size
+        height = box[5] * image_size
+        
+        # Convert xywh to xyxy
+        x1 = x_center - (width / 2)
+        y1 = y_center - (height / 2)
+        x2 = x_center + (width / 2)
+        y2 = y_center + (height / 2)
+        
+        # Append to lists
+        boxes.append([x1, y1, x2, y2])
+        class_ids.append(class_id)
+        scores.append(conf)
+
+    # Convert lists to tensors
+    boxes_tensor = torch.tensor(boxes, dtype=torch.float32)
+    class_ids_tensor = torch.tensor(class_ids, dtype=torch.int64)
+    scores_tensor = torch.tensor(scores, dtype=torch.float32)
+
+    return boxes_tensor, class_ids_tensor, scores_tensor

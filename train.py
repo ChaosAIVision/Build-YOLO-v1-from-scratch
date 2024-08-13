@@ -8,11 +8,13 @@ import numpy as np
 import shutil
 import matplotlib.pyplot as plt
 from models.yolo import YOLOv1
-from utils.general import ManagerDataYaml, ManageSaveDir, save_plots_from_tensorboard, cellboxes_to_boxes
+from utils.general import ManagerDataYaml, ManageSaveDir, save_plots_from_tensorboard, cellboxes_to_boxes, convert_xywh2xyxy
 from utils.dataloader import CustomDataLoader
 from utils.loss import YoloLoss
 from utils.dataset import Create_YOLO_Cache
-from utils.metric import  non_max_suppression, mean_average_precision
+from torchmetrics.detection.mean_ap import MeanAveragePrecision
+
+from utils.metric import  non_max_suppression
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -23,7 +25,7 @@ def get_args():
     parser.add_argument('--batch_size', '-b', type = int, help = 'input batch_size')
     parser.add_argument("--image_size", '-i', type = int, default= 448)
     parser.add_argument('--epochs', '-e', type= int, default= 100)
-    parser.add_argument('--learning_rate', '-l', type= float, default= 1e-2)
+    parser.add_argument('--learning_rate', '-l', type= float, default= 1e-3)
     parser.add_argument('--resume', action='store_true', help='True if want to resume training')
     parser.add_argument('--pretrain', action='store_true', help='True if want to use pre-trained weights')
     parser.add_argument("--iou_threshold", '-iou', type = int, default= 0.5)
@@ -40,7 +42,9 @@ def train(args):
     pretrain_weight = data_yaml_manage.get_properties(key='pretrain_weight')
     categories = data_yaml_manage.get_properties(key='categories')
     num_classes = data_yaml_manage.get_properties(key='num_classes')
-    S= 7, B =2 , C = 20
+    S= 7
+    B =2 
+    C = 20
     model = YOLOv1(split_size= S, num_boxes= B, num_classes= C)
     loss_fn = YoloLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr = args.learning_rate, momentum= 0.9)
@@ -66,13 +70,11 @@ def train(args):
     #=============
     print('Loading training images ...')
     cache_train_creator = Create_YOLO_Cache(is_train='train', data_yaml=args.data_yaml)
-    cache_train_creator.__save_cache__()
     if cache_train_creator.__save_cache__() :
         print('sucessfully create train iamges cache !')
 
     print('Loading valid images ...')
     cache_valid_creator = Create_YOLO_Cache(is_train='valid', data_yaml=args.data_yaml)
-    cache_valid_creator.__save_cache__()
     if cache_valid_creator.__save_cache__() :
         print('sucessfully create train iamges cache !')
 
@@ -83,7 +85,7 @@ def train(args):
     locate_save_dir = ManageSaveDir(args.data_yaml)
     weights_folder , tensorboard_folder =  locate_save_dir.create_save_dir() # lấy địa chỉ lưu weight và log
     save_dir = locate_save_dir.get_save_dir_path()
-    locate_save_dir.plot_dataset() # plot distribution of dataset
+    # locate_save_dir.plot_dataset() # plot distribution of dataset
     writer = SummaryWriter(tensorboard_folder)
     scaler = torch.cuda.amp.GradScaler()
     # TRAIN
@@ -102,10 +104,10 @@ def train(args):
             with torch.cuda.amp.autocast():
                 output =  model(images)
                 loss = loss_fn(output, labels)
-                all_train_losses.append(loss.item())
-                 
+                all_train_losses.append(loss.item())                
             all_train_losses.append(loss.item())
-            progress_bar.set_postfix({f'loss: {loss :0.4f} '})
+            progress_bar.set_postfix({'loss': f'{loss.item():0.4f}'})
+
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -118,8 +120,9 @@ def train(args):
     # VALIDATION
 
         model.eval()
-        iou_threshold = args.iou_theshold
-        conf = args.conf_theshold
+        metric = MeanAveragePrecision(iou_type="bbox")
+        iou_threshold = args.iou_threshold
+        conf = args.conf_threshold
         pred_format ='cells'
         box_format = 'midpoint'
         all_losses = []
@@ -128,7 +131,7 @@ def train(args):
   
 
         with torch.no_grad():
-            progress_bar = tqdm(valid_loader, colour=  'yellow', desc=f"epochs: {epoch}/{args.epochs}")
+            progress_bar = tqdm(valid_loader, colour=  'yellow', desc=f"epochs: {epoch +1}/{args.epochs}")
             for i, (images, labels) in enumerate(progress_bar):
                 images = images.to(device)
                 labels = labels.to(device)
@@ -139,27 +142,36 @@ def train(args):
                 with torch.cuda.amp.autocast():
                     loss = loss_fn(output, labels)
                 all_losses.append(loss.item())
-                progress_bar.set_postfix({f'loss: {loss :0.4f} '})
+                progress_bar.set_postfix({'loss': f'{loss.item():0.4f}'})
                 batch_size = output.shape[0]
                 true_bboxes =cellboxes_to_boxes(labels)
                 pred_bboxes = cellboxes_to_boxes(output)
                 for idx in range(batch_size):
-                    nms_boxes = non_max_suppression(pred_bboxes(idx),
+
+                    nms_boxes = non_max_suppression(pred_bboxes[idx],
                                                     iou_threshold,
                                                     conf, 
                                                     box_format)
                     for nms_box in nms_boxes:
                         all_pred_boxes.append(nms_box)
-                    for box in true_bboxes:
+                    for box in true_bboxes[idx]:
                         if box[1] > conf:
                             all_true_boxes.append(box)
-            mAP50, precision, recall = mean_average_precision(all_pred_boxes, all_true_boxes,iou_threshold, box_format, num_classes, True)
+            if len(all_pred_boxes) == 0:
+                mAP50= 0
+            else:
+                true_boxes_tensor, true_labels_tensor, _ = convert_xywh2xyxy(all_true_boxes, 448)
+                pred_boxes_tensor, pred_labels_tensor, pred_scores_tensor = convert_xywh2xyxy(all_pred_boxes, 448)
+                true_boxes = [{"boxes": true_boxes_tensor, "labels": true_labels_tensor}]
+                pred_boxes = [{"boxes": pred_boxes_tensor, "scores": pred_scores_tensor, "labels": pred_labels_tensor}]
+                metric.update(pred_boxes, true_boxes)
+                result = metric.compute()
+                mAP50 = result['map_50']
             avagare_loss = np.mean(all_losses)
-            print(f"precision: {precision :0.4f}  recall: {recall:0.4f} loss: {avagare_loss :0.4f} mAP50: {mAP50 :0.4f}")
+            print(f"mAP50: {mAP50 :0.4f}")
             writer.add_scalar("Valid/mAP50", mAP50, epoch)
             writer.add_scalar("Valid/mean_loss", avagare_loss, epoch)
-            writer.add_scalar("Valid/precision", precision, epoch)
-            writer.add_scalar("Valid/recall", recall,  epoch)
+          
             checkpoint = {
                 'model_state_dict': model.state_dict(),
                 'epochs' : epoch,

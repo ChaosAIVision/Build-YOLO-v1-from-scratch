@@ -13,6 +13,7 @@ from tqdm import tqdm  # Thư viện để tạo thanh tiến trình
 import torch
 from torch.utils.data import Dataset
 from utils.general import ManagerDataYaml, is_image_file, load_cache
+from torchvision import transforms
 
 
 
@@ -93,6 +94,7 @@ class YOLODataset(Dataset):
         data_yaml_manage.load_yaml()
         self.is_train = is_train
         self.transform = transform
+        self.to_tensor = transforms.ToTensor()
         self.S = S 
         self.B = B 
         self.C = C
@@ -120,7 +122,7 @@ class YOLODataset(Dataset):
         if self.transform:
             augmentator=  YOLOAugmentation(self.is_train)
             image, labels = augmentator(image, labels)
-            print('it is transform sucessfully !')
+        image = self.to_tensor(image)
         boxes = torch.tensor(labels)
 
          # Convert To Cells
@@ -166,7 +168,7 @@ class YOLODataset(Dataset):
                 # Set one hot encoding for class_label
                 label_matrix[i, j, class_label] = 1
 
-        return image, label_matrix.shape
+        return image, label_matrix
 
 
 

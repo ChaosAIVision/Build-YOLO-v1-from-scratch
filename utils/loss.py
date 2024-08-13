@@ -110,4 +110,8 @@ class YoloLoss(nn.Module):
             + class_loss 
         )
 
-        return loss
+ 
+
+
+
+        return loss / 100

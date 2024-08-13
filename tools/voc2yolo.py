@@ -57,3 +57,4 @@ voc_label_path = Path('/home/chaos/Documents/ChaosAIVision/dataset/VOCdevkit/VOC
 output_folder_path = Path('/home/chaos/Documents/ChaosAIVision/dataset/VOCdevkit/VOC2012/labels/')  # Replace with your output folder path
 
 convert_label(image_folder_path, voc_label_path, output_folder_path)
+

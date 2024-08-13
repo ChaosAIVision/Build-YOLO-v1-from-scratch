@@ -46,6 +46,9 @@ def train(args):
     B =2 
     C = 20
     model = YOLOv1(split_size= S, num_boxes= B, num_classes= C)
+    # Use DataParallel if more than 1 GPU is available
+    if torch.cuda.device_count() > 1:
+        model = torch.nn.DataParallel(model)
     loss_fn = YoloLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr = args.learning_rate, momentum= 0.9)
     # optimizer = torch.optim.AdamW(model.parameters(), lr = args.learning_rate, weight_decay=1e-2 )
@@ -169,7 +172,7 @@ def train(args):
                 result = metric.compute()
                 mAP50 = result['map_50']
             avagare_loss = np.mean(all_losses)
-            print(f"mAP50: {mAP50 :0.4f}")
+            print(f"mAP50: {mAP50 :0.4f}, mean_loss: {avagare_loss: 0.4f} ")
             writer.add_scalar("Valid/mAP50", mAP50, epoch)
             writer.add_scalar("Valid/mean_loss", avagare_loss, epoch)
           

@@ -29,6 +29,7 @@ class CustomDataLoader(DataLoader):
             dataset= data,
             batch_size= self.batch_size,
             num_workers= self.num_workers,
+            pin_memory=True,
             shuffle= True if self.mode == 'train' else False,
             drop_last= False)
         

@@ -1,5 +1,5 @@
-train: /kaggle/working/voc_dataset/train/images
-valid: /kaggle/working/voc_dataset/valid/images
+train: /home/chaos/Documents/ChaosAIVision/dataset/dataset/images
+valid: /home/chaos/Documents/ChaosAIVision/dataset/dataset/images
 test: 
 num_classes: 20
 categories: ["aeroplane",
@@ -23,6 +23,6 @@ categories: ["aeroplane",
 "train",
 "tvmonitor"]
 pretrain_weight: /home/chaos/Documents/ChaosAIVision/yolo_output/yolov1.weights
-save_dirs: /kaggle/working/output
+save_dirs: /home/chaos/Documents/ChaosAIVision/yolo_output
 
 

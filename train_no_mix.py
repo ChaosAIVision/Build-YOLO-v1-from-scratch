@@ -35,108 +35,99 @@ def get_args():
 
 
 def train(args):
-
+    seed = 123
+    torch.manual_seed(seed)
     device = torch.device('cuda' if torch.cuda.is_available() else "cpu")
     data_yaml_manage = ManagerDataYaml(args.data_yaml)
     data_yaml_manage.load_yaml()
     pretrain_weight = data_yaml_manage.get_properties(key='pretrain_weight')
     categories = data_yaml_manage.get_properties(key='categories')
     num_classes = data_yaml_manage.get_properties(key='num_classes')
-    S= 7
-    B =2 
+    S = 7
+    B = 2
     C = 20
-    model = Yolov1(split_size= S, num_boxes= B, num_classes= C)
+    model = Yolov1(split_size=S, num_boxes=B, num_classes=C)
+    
     # Use DataParallel if more than 1 GPU is available
     if torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
+    
     loss_fn = YoloLoss()
-    # optimizer = torch.optim.SGD(model.parameters(), lr = args.learning_rate, momentum= 0.9)
-    optimizer = torch.optim.Adam(model.parameters(), lr = 1e-4, weight_decay= 0)
-    # optimizer = torch.optim.AdamW(model.parameters(), lr = args.learning_rate, weight_decay=1e-2 )
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0)
 
-    best_map = - 100 # create  logic for save weight
-    if args.pretrain == True:
+    best_map = -100  # Create logic for save weight
+    if args.pretrain:
         state_dict = torch.load(pretrain_weight)
-        model.load_state_dict(state_dict, strict= False)
-        print('load weight pretrain sucessfully !')
-    if args.resume == True:
+        model.load_state_dict(state_dict, strict=False)
+        print('Loaded pretrain weights successfully!')
+    
+    if args.resume:
         checkpoint = torch.load(pretrain_weight)
         model.load_state_dict(checkpoint['model_state_dict'])
         start_epochs = checkpoint['epochs']
         best_map = checkpoint['best_mapuracy']
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        print('load weight resume sucessfully !')
-
+        print('Resumed from checkpoint successfully!')
     else:
         start_epochs = 0
-    #=============
-    # LOAD DATASET
-    #=============
+
+    # Load dataset
     print('Loading training images ...')
     cache_train_creator = Create_YOLO_Cache(is_train='train', data_yaml=args.data_yaml)
-    if cache_train_creator.__save_cache__() :
-        print('sucessfully create train iamges cache !')
+    if cache_train_creator.__save_cache__():
+        print('Successfully created train images cache!')
 
     print('Loading valid images ...')
     cache_valid_creator = Create_YOLO_Cache(is_train='valid', data_yaml=args.data_yaml)
-    if cache_valid_creator.__save_cache__() :
-        print('sucessfully create train iamges cache !')
+    if cache_valid_creator.__save_cache__():
+        print('Successfully created valid images cache!')
 
-    # model = torch.compile(model)
     model.to(device)
-    train_dataloader = CustomDataLoader(args.data_yaml,'train', args.batch_size, num_workers= 4).create_dataloader()
-    valid_loader = CustomDataLoader(args.data_yaml,'valid', args.batch_size, num_workers= 2).create_dataloader()
+    train_dataloader = CustomDataLoader(args.data_yaml, 'train', args.batch_size, num_workers=4).create_dataloader()
+    valid_loader = CustomDataLoader(args.data_yaml, 'valid', args.batch_size, num_workers=2).create_dataloader()
     locate_save_dir = ManageSaveDir(args.data_yaml)
-    weights_folder , tensorboard_folder =  locate_save_dir.create_save_dir() # lấy địa chỉ lưu weight và log
+    weights_folder, tensorboard_folder = locate_save_dir.create_save_dir()  # Get save directories for weights and logs
     save_dir = locate_save_dir.get_save_dir_path()
-    # locate_save_dir.plot_dataset() # plot distribution of dataset
     writer = SummaryWriter(tensorboard_folder)
-    scaler = torch.cuda.amp.GradScaler()
+    
     # TRAIN
-    print(f'result wil save at {save_dir}')
+    print(f'Results will be saved at {save_dir}')
     for epoch in range(start_epochs, args.epochs):
         model.train()
         all_train_losses = []
-        progress_bar = tqdm(train_dataloader, colour=  'green', desc=f"epochs: {epoch + 1}/{args.epochs}")
+        progress_bar = tqdm(train_dataloader, colour='green', desc=f"Epochs: {epoch + 1}/{args.epochs}")
         for i, (images, labels) in enumerate(progress_bar):
             images = images.to(device)
             labels = labels.to(device)
             if torch.any(torch.isnan(images)) or torch.any(torch.isinf(images)) or \
-           torch.any(torch.isnan(labels)) or torch.any(torch.isinf(labels)):
+               torch.any(torch.isnan(labels)) or torch.any(torch.isinf(labels)):
                 continue
             optimizer.zero_grad()
-            with torch.cuda.amp.autocast():
-                output =  model(images)
-                loss = loss_fn(output, labels)
-                all_train_losses.append(loss.item())                
+            output = model(images)
+            loss = loss_fn(output, labels)
             all_train_losses.append(loss.item())
             progress_bar.set_postfix({'loss': f'{loss.item():0.4f}'})
 
-            scaler.scale(loss).backward()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Thay đổi max_norm tùy thuộc vào nhu cầu của bạn
-            scaler.step(optimizer)
-            scaler.update()
-        avagare__train_loss = np.mean(all_train_losses)
-        writer.add_scalar("Train/mean_loss", avagare__train_loss, epoch)
+            loss.backward()
 
+            optimizer.step()
+        
+        average_train_loss = np.mean(all_train_losses)
+        writer.add_scalar("Train/mean_loss", average_train_loss, epoch)
 
-
-    
-    # VALIDATION
-
+        # VALIDATION
         model.eval()
         metric = MeanAveragePrecision(iou_type="bbox")
         iou_threshold = args.iou_threshold
         conf = args.conf_threshold
-        pred_format ='cells'
+        pred_format = 'cells'
         box_format = 'midpoint'
         all_losses = []
         all_pred_boxes = []
         all_true_boxes = []
-  
 
         with torch.no_grad():
-            progress_bar = tqdm(valid_loader, colour=  'yellow', desc=f"epochs: {epoch +1}/{args.epochs}")
+            progress_bar = tqdm(valid_loader, colour='yellow', desc=f"Epochs: {epoch + 1}/{args.epochs}")
             for i, (images, labels) in enumerate(progress_bar):
                 images = images.to(device)
                 labels = labels.to(device)
@@ -144,15 +135,14 @@ def train(args):
                 torch.any(torch.isnan(labels)) or torch.any(torch.isinf(labels)):
                     continue
                 output = model(images)
-                with torch.cuda.amp.autocast():
-                    loss = loss_fn(output, labels)
+                loss = loss_fn(output, labels)
                 all_losses.append(loss.item())
                 progress_bar.set_postfix({'loss': f'{loss.item():0.4f}'})
+
                 batch_size = output.shape[0]
-                true_bboxes =cellboxes_to_boxes(labels)
+                true_bboxes = cellboxes_to_boxes(labels)
                 pred_bboxes = cellboxes_to_boxes(output)
                 for idx in range(batch_size):
-
                     nms_boxes = non_max_suppression(pred_bboxes[idx],
                                                     iou_threshold,
                                                     conf, 
@@ -162,33 +152,35 @@ def train(args):
                     for box in true_bboxes[idx]:
                         if box[1] > conf:
                             all_true_boxes.append(box)
-            if len(all_pred_boxes) == 0:
-                mAP50= 0
-            else:
-                true_boxes_tensor, true_labels_tensor, _ = convert_xywh2xyxy(all_true_boxes, 448)
-                pred_boxes_tensor, pred_labels_tensor, pred_scores_tensor = convert_xywh2xyxy(all_pred_boxes, 448)
-                true_boxes = [{"boxes": true_boxes_tensor, "labels": true_labels_tensor}]
-                pred_boxes = [{"boxes": pred_boxes_tensor, "scores": pred_scores_tensor, "labels": pred_labels_tensor}]
-                metric.update(pred_boxes, true_boxes)
-                result = metric.compute()
-                mAP50 = result['map_50']
-            avagare_loss = np.mean(all_losses)
-            print(f"mAP50: {mAP50 :0.4f}, mean_loss: {avagare_loss: 0.4f} ")
-            writer.add_scalar("Valid/mAP50", mAP50, epoch)
-            writer.add_scalar("Valid/mean_loss", avagare_loss, epoch)
-          
-            checkpoint = {
-                'model_state_dict': model.state_dict(),
-                'epochs' : epoch,
-                'optimizer_state_dict': optimizer.state_dict(),
-                'best_mapuracy': best_map
-            }
-            torch.save(checkpoint,os.path.join( weights_folder, 'last.pt'))
-            if mAP50 > best_map:
-                torch.save(checkpoint,os.path.join( weights_folder, 'best.pt'))
-                best_map = mAP50
+        
+        if len(all_pred_boxes) == 0:
+            mAP50 = 0
+        else:
+            true_boxes_tensor, true_labels_tensor, _ = convert_xywh2xyxy(all_true_boxes, 448)
+            pred_boxes_tensor, pred_labels_tensor, pred_scores_tensor = convert_xywh2xyxy(all_pred_boxes, 448)
+            true_boxes = [{"boxes": true_boxes_tensor, "labels": true_labels_tensor}]
+            pred_boxes = [{"boxes": pred_boxes_tensor, "scores": pred_scores_tensor, "labels": pred_labels_tensor}]
+            metric.update(pred_boxes, true_boxes)
+            result = metric.compute()
+            mAP50 = result['map_50']
+        
+        average_loss = np.mean(all_losses)
+        print(f"mAP50: {mAP50:0.4f}, mean_loss: {average_loss:0.4f}")
+        writer.add_scalar("Valid/mAP50", mAP50, epoch)
+        writer.add_scalar("Valid/mean_loss", average_loss, epoch)
 
-    save_plots_from_tensorboard(tensorboard_folder, save_dir)    
+        checkpoint = {
+            'model_state_dict': model.state_dict(),
+            'epochs': epoch,
+            'optimizer_state_dict': optimizer.state_dict(),
+            'best_mapuracy': best_map
+        }
+        torch.save(checkpoint, os.path.join(weights_folder, 'last.pt'))
+        if mAP50 > best_map:
+            torch.save(checkpoint, os.path.join(weights_folder, 'best.pt'))
+            best_map = mAP50
+
+    save_plots_from_tensorboard(tensorboard_folder, save_dir)
 
 
         

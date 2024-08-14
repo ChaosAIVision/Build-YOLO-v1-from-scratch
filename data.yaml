@@ -26,4 +26,3 @@ pretrain_weight: /home/chaos/Documents/ChaosAIVision/yolo_output/yolov1.weights
 save_dirs: /kaggle/working/output
 
 
-

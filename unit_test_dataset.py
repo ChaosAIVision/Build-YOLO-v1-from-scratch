@@ -1,8 +1,8 @@
 from utils.dataset import  Create_YOLO_Cache, YOLODataset
-yaml = '/Users/chaos/Documents/Chaos_working/Chaos_projects/Build-YOLO-v1-from-scratch/data.yaml'
+yaml = '/home/chaos/Documents/ChaosAIVision/Build-YOLO-v1-from-scratch/data.yaml'
 # Create an instance of Create_YOLO_Cache and save cache
-# cache_creator = Create_YOLO_Cache(is_train='train', data_yaml=yaml)
-# cache_creator.__save_cache__()
+cache_creator = Create_YOLO_Cache(is_train='train', data_yaml=yaml)
+cache_creator.__save_cache__()
 
 # import pickle
 # import os
@@ -29,5 +29,5 @@ yaml = '/Users/chaos/Documents/Chaos_working/Chaos_projects/Build-YOLO-v1-from-s
 # # a = load_cache(path)
 # # print(type(a))
 dataset= YOLODataset('train', yaml,7,2,20,True)
-a = dataset.__getitem__(20)
+a = dataset.__getitem__(6)
 print(a)

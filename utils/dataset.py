@@ -1,5 +1,6 @@
 import torch
 import os
+import torchvision
 import pandas as pd
 from PIL import Image
 from torch.utils.data import Dataset
@@ -94,7 +95,8 @@ class YOLODataset(Dataset):
         data_yaml_manage.load_yaml()
         self.is_train = is_train
         self.transform = transform
-        self.to_tensor = transforms.ToTensor()
+        self.to_tensor =  torchvision.transforms.Compose([transforms.Resize((448, 448)), transforms.ToTensor(),])
+
         self.S = S 
         self.B = B 
         self.C = C
@@ -119,9 +121,11 @@ class YOLODataset(Dataset):
         infor = self.cache[index]
         image = Image.open(infor['images'])
         labels = infor['labels']
-        if self.transform:
-            augmentator=  YOLOAugmentation(self.is_train)
-            image, labels = augmentator(image, labels)
+
+        # if self.transform:
+            # augmentator=  YOLOAugmentation(self.is_train)
+            # image, labels = augmentator(image, labels)
+        
         image = self.to_tensor(image)
         boxes = torch.tensor(labels)
 

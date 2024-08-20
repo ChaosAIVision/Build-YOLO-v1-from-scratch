@@ -13,36 +13,17 @@ import numpy as np
 #Load model
 S = 7
 B = 2
-C = 20
+C = 3
 model = Yolov1(split_size=S, num_boxes=B, num_classes=C)
-pretrain_weight = '/home/chaos/Documents/ChaosAIVision/yolo_output/result3/weights/best.pt'
+pretrain_weight = '/home/chaos/Documents/ChaosAIVision/yolo_output/result1/weights/best.pt'
 
 checkpoint = torch.load(pretrain_weight)
 model.load_state_dict(checkpoint['model_state_dict'])
 
 
 #Load image
-image = Image.open('/home/chaos/Documents/ChaosAIVision/dataset/dataset/images/000164.jpg')
-classes =  ["aeroplane",
-"bicycle",
-"bird",
-"boat",
-"bottle",
-"bus",
-"car",
-"cat",
-"chair",
-"cow",
-"diningtable",
-"dog",
-"horse",
-"motorbike",
-"person",
-"pottedplant",
-"sheep",
-"sofa",
-"train",
-"tvmonitor"]
+image = Image.open('/home/chaos/Documents/ChaosAIVision/dataset/yolo_train/valid/images/cat.4069.jpg')
+classes =  ["person",'cat', 'dog']
 
 
 transform = Compose([

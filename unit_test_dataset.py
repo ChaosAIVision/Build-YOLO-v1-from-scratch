@@ -1,8 +1,8 @@
 from utils.dataset import  Create_YOLO_Cache, YOLODataset
 yaml = '/home/chaos/Documents/ChaosAIVision/Build-YOLO-v1-from-scratch/data.yaml'
 # Create an instance of Create_YOLO_Cache and save cache
-cache_creator = Create_YOLO_Cache(is_train='train', data_yaml=yaml)
-cache_creator.__save_cache__()
+# cache_creator = Create_YOLO_Cache(is_train='train', data_yaml=yaml)
+# cache_creator.__save_cache__()
 
 # import pickle
 # import os
@@ -28,6 +28,15 @@ cache_creator.__save_cache__()
 # # path = '/home/chaos/Documents/ChaosAIVision/dataset/fire_dataset/train/labels.cache'
 # # a = load_cache(path)
 # # print(type(a))
-dataset= YOLODataset('train', yaml,7,2,20,True)
-a = dataset.__getitem__(6)
-print(a)
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+def get_valid_transforms(WIDTH = 448, HEIGHT = 448):
+    return A.Compose([A.Resize(height=WIDTH, width=HEIGHT, p=1.0),
+                      ToTensorV2(p=0.0)],
+                      p=1.0,
+                      bbox_params=A.BboxParams(format='yolo', min_area=0, min_visibility=0, label_fields=['labels'])
+                      )
+
+dataset= YOLODataset('train', yaml,7,2,3,get_valid_transforms())
+a, b = dataset.__getitem__(3288)
+print(a.dtype)

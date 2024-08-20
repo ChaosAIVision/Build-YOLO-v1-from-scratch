@@ -1,27 +1,8 @@
-train: /kaggle/working/voc_dataset/train/images
-valid: /kaggle/working/voc_dataset/valid/images
+train: /home/chaos/Documents/ChaosAIVision/dataset/yolo_train/train/images
+valid: /home/chaos/Documents/ChaosAIVision/dataset/yolo_train/valid/images
 test: 
-num_classes: 20
-categories: ["aeroplane",
-"bicycle",
-"bird",
-"boat",
-"bottle",
-"bus",
-"car",
-"cat",
-"chair",
-"cow",
-"diningtable",
-"dog",
-"horse",
-"motorbike",
-"person",
-"pottedplant",
-"sheep",
-"sofa",
-"train",
-"tvmonitor"]
+num_classes: 3
+categories: ['person', 'cat', 'dog']
 pretrain_weight: /home/chaos/Documents/ChaosAIVision/yolo_output/yolov1.weights
-save_dirs: /kaggle/working/output
+save_dirs: /home/chaos/Documents/ChaosAIVision/yolo_output
 

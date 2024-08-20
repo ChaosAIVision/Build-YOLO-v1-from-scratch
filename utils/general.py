@@ -201,58 +201,6 @@ def plot_image(image, boxes):
 
     plt.show()
 
-def get_bboxes(
-    loader,
-    model,
-    iou_threshold,
-    threshold,
-    pred_format="cells",
-    box_format="midpoint",
-    device="cuda",
-):
-    all_pred_boxes = []
-    all_true_boxes = []
-
-    # make sure model is in eval before get bboxes
-    model.eval()
-    train_idx = 0
-
-    for batch_idx, (x, labels) in enumerate(loader):
-        x = x.to(device)
-        labels = labels.to(device)
-
-        with torch.no_grad():
-            predictions = model(x)
-
-        batch_size = x.shape[0]
-        true_bboxes = cellboxes_to_boxes(labels)
-        bboxes = cellboxes_to_boxes(predictions)
-
-        for idx in range(batch_size):
-            nms_boxes = non_max_suppression(
-                bboxes[idx],
-                iou_threshold=iou_threshold,
-                threshold=threshold,
-                box_format=box_format,
-            )
-
-
-            #if batch_idx == 0 and idx == 0:
-            #    plot_image(x[idx].permute(1,2,0).to("cpu"), nms_boxes)
-            #    print(nms_boxes)
-
-            for nms_box in nms_boxes:
-                all_pred_boxes.append([train_idx] + nms_box)
-
-            for box in true_bboxes[idx]:
-                # many will get converted to 0 pred
-                if box[1] > threshold:
-                    all_true_boxes.append([train_idx] + box)
-
-            train_idx += 1
-
-    model.train()
-    return all_pred_boxes, all_true_boxes
 
 
 
@@ -269,11 +217,11 @@ def convert_cellboxes(predictions, S=7):
 
     predictions = predictions.to("cpu")
     batch_size = predictions.shape[0]
-    predictions = predictions.reshape(batch_size, 7, 7, 30)
-    bboxes1 = predictions[..., 21:25]
-    bboxes2 = predictions[..., 26:30]
+    predictions = predictions.reshape(batch_size, 7, 7, 13)
+    bboxes1 = predictions[..., 4:8]
+    bboxes2 = predictions[..., 9:13]
     scores = torch.cat(
-        (predictions[..., 20].unsqueeze(0), predictions[..., 25].unsqueeze(0)), dim=0
+        (predictions[..., 3].unsqueeze(0), predictions[..., 8].unsqueeze(0)), dim=0
     )
     best_box = scores.argmax(0).unsqueeze(-1)
     best_boxes = bboxes1 * (1 - best_box) + best_box * bboxes2
@@ -282,8 +230,8 @@ def convert_cellboxes(predictions, S=7):
     y = 1 / S * (best_boxes[..., 1:2] + cell_indices.permute(0, 2, 1, 3))
     w_y = 1 / S * best_boxes[..., 2:4]
     converted_bboxes = torch.cat((x, y, w_y), dim=-1)
-    predicted_class = predictions[..., :20].argmax(-1).unsqueeze(-1)
-    best_confidence = torch.max(predictions[..., 20], predictions[..., 25]).unsqueeze(
+    predicted_class = predictions[..., :3].argmax(-1).unsqueeze(-1)
+    best_confidence = torch.max(predictions[..., 3], predictions[..., 8]).unsqueeze(
         -1
     )
     converted_preds = torch.cat(
@@ -354,7 +302,7 @@ def save_plots_from_tensorboard(tensorboard_folder, output_image_folder):
     plt.figure(figsize=(16, 8))
     
     # Các tag cho huấn luyện
-    train_tags = ['Train/mean_loss']
+    train_tags = ['Train/mean_loss', 'Train/mAP50']
     # Các tag cho kiểm tra
     valid_tags = ['Valid/mean_loss', 'Valid/mAP50']
 
@@ -445,3 +393,11 @@ def convert_xywh2xyxy(pred_boxes, image_size):
     scores_tensor = torch.tensor(scores, dtype=torch.float32)
 
     return boxes_tensor, class_ids_tensor, scores_tensor
+
+
+def rename_keys(checkpoint):
+    new_state_dict = {}
+    for k, v in checkpoint.items():
+        new_key = k.replace('_orig_mod.darknet.', '')  # Loại bỏ tiền tố "_orig_mod."
+        new_state_dict[new_key] = v
+    return new_state_dict

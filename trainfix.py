@@ -13,6 +13,8 @@ from utils.dataloader import CustomDataLoader
 from utils.loss import YoloLoss
 from utils.dataset import Create_YOLO_Cache
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
+from termcolor import colored
+
 
 from utils.metric import  non_max_suppression,mean_average_precision
 import warnings
@@ -33,6 +35,108 @@ def get_args():
 
     return parser.parse_args()  # Cần trả về kết quả từ parser.parse_args()
 
+
+def get_bboxes_training(
+    outputs,
+    labels,
+    iou_threshold=0.5,
+    threshold=0.4,
+    box_format="midpoint",
+    device="cuda",
+):
+    all_pred_boxes = []
+    all_true_boxes = []
+
+    # Ensure the model is in evaluation mode before obtaining bounding boxes
+    train_idx = 0
+
+    true_bboxes = cellboxes_to_boxes(labels)
+    bboxes = cellboxes_to_boxes(outputs)
+
+    for idx in range(outputs.shape[0]):
+        nms_boxes = non_max_suppression(
+            bboxes[idx],
+            iou_threshold=iou_threshold,
+            threshold=threshold,
+            box_format=box_format,
+        )
+
+        for nms_box in nms_boxes:
+            all_pred_boxes.append([train_idx] + nms_box)
+
+        for box in true_bboxes[idx]:
+            # Convert multiple boxes to 0 if predicted
+            if box[1] > threshold:
+                all_true_boxes.append([train_idx] + box)
+
+        train_idx += 1
+
+    return all_pred_boxes, all_true_boxes
+
+def train_fn(train_loader, model, optimizer, loss_fn, epoch, total_epochs):
+    model.train()
+    device = torch.device('cuda' if torch.cuda.is_available() else "cpu")
+    mean_loss = []
+    mean_mAP = []
+
+    # Dùng `leave=True` để đảm bảo tqdm hoàn thành thanh tiến trình đúng cách
+    progress_bar = tqdm(train_loader, colour='green', desc=f"Epochs: {epoch + 1}/{total_epochs}", leave=True)
+
+    for batch_idx, (x, y) in enumerate(progress_bar):
+        if torch.any(torch.isnan(x)) or torch.any(torch.isinf(x)) or \
+            torch.any(torch.isnan(y)) or torch.any(torch.isinf(y)):
+                continue
+        x, y = x.to(device), y.to(device)
+        out = model(x)
+        loss = loss_fn(out, y)
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step() 
+
+        pred_boxes, true_boxes = get_bboxes_training(out, y, iou_threshold=0.5, threshold=0.4)
+        mAP = mean_average_precision(pred_boxes, true_boxes, iou_threshold=0.5, box_format="midpoint")
+        progress_bar.set_postfix({'loss': f'{loss.item():0.4f}'})
+
+        mean_loss.append(loss.item())
+        mean_mAP.append(mAP.item())
+
+    avg_loss = sum(mean_loss) / len(mean_loss)
+    avg_mAP = sum(mean_mAP) / len(mean_mAP)
+    print(colored(f"\nTrain \t loss: {avg_loss:3.10f} \t mAP: {avg_mAP:3.10f}\n", 'green'))
+
+    return avg_mAP, avg_loss
+
+def test_fn(test_loader, model, loss_fn, epoch, total_epochs):
+    device = torch.device('cuda' if torch.cuda.is_available() else "cpu")
+
+    model.eval()
+    mean_loss = []
+    mean_mAP = []
+
+    progress_bar = tqdm(test_loader, colour='yellow', desc=f"Epochs: {epoch + 1}/{total_epochs}", leave=True)
+
+    for batch_idx, (x, y) in enumerate(progress_bar):
+        if torch.any(torch.isnan(x)) or torch.any(torch.isinf(x)) or \
+            torch.any(torch.isnan(y)) or torch.any(torch.isinf(y)):
+                continue
+        x, y = x.to(device), y.to(device)
+        out = model(x)
+        loss = loss_fn(out, y)
+
+        pred_boxes, true_boxes = get_bboxes_training(out, y, iou_threshold=0.5, threshold=0.4)
+        mAP = mean_average_precision(pred_boxes, true_boxes, iou_threshold=0.5, box_format="midpoint")
+
+        progress_bar.set_postfix({'loss': f'{loss.item():0.4f}'})
+        mean_loss.append(loss.item())
+        mean_mAP.append(mAP.item())
+
+    avg_loss = sum(mean_loss) / len(mean_loss)
+    avg_mAP = sum(mean_mAP) / len(mean_mAP)
+
+    print(colored(f"\nTest \t loss: {avg_loss:3.10f} \t mAP: {avg_mAP:3.10f}\n", 'yellow'))
+
+    return avg_mAP, avg_loss
 
 def train(args):
     seed = 123
@@ -60,8 +164,8 @@ def train(args):
   
     model.darknet.load_state_dict(backbone_state_dict, strict=False)
     print('Loading backbone pretrain successfully !')
-    for param in model.darknet.parameters():
-        param.requires_grad = False
+    # for param in model.darknet.parameters():
+    #     param.requires_grad = False
     #################################################################################################
     # # Kiểm tra xem các tham số của backbone đã được đóng băng chưa
     # for name, param in model.named_parameters():
@@ -73,25 +177,15 @@ def train(args):
         model = torch.nn.DataParallel(model)
     
     loss_fn = YoloLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.001)
     # optimizer = torch.optim.SGD(model.parameters(), lr = args.learning_rate, momentum= 0.9)
 
-    best_map = -100  # Create logic for save weight
     if args.pretrain:
         state_dict = torch.load(pretrain_weight)
         model.load_state_dict(state_dict, strict=False)
         print('Loaded pretrain weights successfully!')
     
-    if args.resume:
-        checkpoint = torch.load(pretrain_weight)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        start_epochs = checkpoint['epochs']
-        best_map = checkpoint['best_mapuracy']
-        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        print('Resumed from checkpoint successfully!')
-    else:
-        start_epochs = 0
-
+  
     # Load dataset
     print('Loading training images ...')
     cache_train_creator = Create_YOLO_Cache(is_train='train', data_yaml=args.data_yaml)
@@ -110,108 +204,39 @@ def train(args):
     weights_folder, tensorboard_folder = locate_save_dir.create_save_dir()  # Get save directories for weights and logs
     save_dir = locate_save_dir.get_save_dir_path()
     writer = SummaryWriter(tensorboard_folder)
-    
-    # TRAIN
+
+    #TRAIN
     print(f'Results will be saved at {save_dir}')
-    for epoch in range(start_epochs, args.epochs):
-        model.train()
-        all_train_losses = []
-        progress_bar = tqdm(train_dataloader, colour='green', desc=f"Epochs: {epoch + 1}/{args.epochs}")
-        for i, (images, labels) in enumerate(progress_bar):
-            images = images.to(device)
-            labels = labels.to(device)
-            if torch.any(torch.isnan(images)) or torch.any(torch.isinf(images)) or \
-               torch.any(torch.isnan(labels)) or torch.any(torch.isinf(labels)):
-                continue
-            optimizer.zero_grad()
-            output = model(images)
-            loss = loss_fn(output, labels)
-            all_train_losses.append(loss.item())
-            progress_bar.set_postfix({'loss': f'{loss.item():0.4f}'})
 
-            loss.backward()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Thay đổi max_norm tùy thuộc vào nhu cầu của bạn
+    best_mAP_train = 0
+    best_mAP_test = 0
 
+    for epoch in range(args.epochs):
+        train_mAP, train_avg_loss = train_fn(train_dataloader, model, optimizer, loss_fn, epoch, args.epochs)
+        valid_mAP, valid_avg_loss = test_fn(valid_loader, model, loss_fn, epoch, args.epochs)
+        # Write mAP and meanLoss to plot
+        writer.add_scalar("Train/mAP50", train_mAP, epoch)
+        writer.add_scalar("Train/mean_loss", train_avg_loss, epoch)
+        writer.add_scalar("Valid/mAP50", valid_mAP, epoch)
+        writer.add_scalar("Valid/mean_loss", valid_avg_loss, epoch)
 
-            optimizer.step()
-        
-        average_train_loss = np.mean(all_train_losses)
-        writer.add_scalar("Train/mean_loss", average_train_loss, epoch)
-
-        # VALIDATION
-        model.eval()
-        metric = MeanAveragePrecision(iou_type="bbox")
-        iou_threshold = args.iou_threshold
-        conf = args.conf_threshold
-        pred_format = 'cells'
-        box_format = 'midpoint'
-        all_losses = []
-        all_pred_boxes = []
-        all_true_boxes = []
-        mean_AP = []
-
-        with torch.no_grad():
-            progress_bar = tqdm(valid_loader, colour='yellow', desc=f"Epochs: {epoch + 1}/{args.epochs}")
-            for i, (images, labels) in enumerate(progress_bar):
-                images = images.to(device)
-                labels = labels.to(device)
-                if torch.any(torch.isnan(images)) or torch.any(torch.isinf(images)) or \
-                torch.any(torch.isnan(labels)) or torch.any(torch.isinf(labels)):
-                    continue
-                output = model(images)
-
-                loss = loss_fn(output, labels)
-                all_losses.append(loss.item())
-                progress_bar.set_postfix({'loss': f'{loss.item():0.4f}'})
-
-                batch_size = output.shape[0]
-                true_bboxes = cellboxes_to_boxes(labels)
-                pred_bboxes = cellboxes_to_boxes(output)
-
-                for idx in range(batch_size):
-                    nms_boxes = non_max_suppression(pred_bboxes[idx],
-                                                    iou_threshold,
-                                                    conf, 
-                                                    box_format)
-                    for nms_box in nms_boxes:
-                        all_pred_boxes.append(nms_box)
-                    for box in true_bboxes[idx]:
-                        if box[1] > conf:
-                            all_true_boxes.append(box)
-        
-        if len(all_pred_boxes) == 0:
-            mAP50 = 0
-        else:
-            mAP50 = mean_average_precision(all_pred_boxes, all_true_boxes, iou_threshold=0.5, box_format="midpoint")
-
-            # true_boxes_tensor, true_labels_tensor, _ = convert_xywh2xyxy(all_true_boxes, 448)
-            # pred_boxes_tensor, pred_labels_tensor, pred_scores_tensor = convert_xywh2xyxy(all_pred_boxes, 448)
-            # true_boxes = [{"boxes": true_boxes_tensor, "labels": true_labels_tensor}]
-            # pred_boxes = [{"boxes": pred_boxes_tensor, "scores": pred_scores_tensor, "labels": pred_labels_tensor}]
-            # metric.update(pred_boxes, true_boxes)
-            # result = metric.compute()
-            # mAP50 = result['map_50']
-        
-        average_loss = np.mean(all_losses)
-        print(f"mAP50: {mAP50:0.4f}, mean_loss: {average_loss:0.4f}")
-        writer.add_scalar("Valid/mAP50", mAP50, epoch)
-        writer.add_scalar("Valid/mean_loss", average_loss, epoch)
-
-        # checkpoint = {
-        #     'model_state_dict': model.state_dict(),
-        #     'epochs': epoch,
-        #     'optimizer_state_dict': optimizer.state_dict(),
-        #     'best_mapuracy': best_map
-        # }
         checkpoint = {
-            'model_state_dict': model.state_dict()
-          
-        }
+            'model_state_dict': model.state_dict()}
         torch.save(checkpoint, os.path.join(weights_folder, 'last.pt'))
-        if mAP50 > best_map:
+
+
+        # Update the best mAP for train and test
+        if train_mAP > best_mAP_train:
+            best_mAP_train = train_mAP
+
+        if valid_mAP > best_mAP_test:
+            best_mAP_test = valid_mAP
             torch.save(checkpoint, os.path.join(weights_folder, 'best.pt'))
-            best_map = mAP50
-    
+
+
+    print(colored(f"Best Train mAP: {best_mAP_train:3.10f}", 'green'))
+    print(colored(f"Best Test mAP: {best_mAP_test:3.10f}", 'yellow'))
+ 
     save_plots_from_tensorboard(tensorboard_folder, save_dir)
 
 
